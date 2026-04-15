@@ -27,7 +27,7 @@ interface BattingRow {
 
 interface BowlingRow {
   playerName: string;
-  overs: number;
+  overs: string;
   maidens: number;
   runs: number;
   wickets: number;
@@ -86,21 +86,27 @@ export default function ScorecardScreen({ route }: Props) {
     matchAPI.scorecard(matchId)
       .then((res) => {
         const data = res.data;
+        const currentInningsId = data.currentInnings?.inningsId;
         // Normalise API response into InningsCard[]
         const cards: InningsCard[] = (data.innings ?? []).map((inns: any) => ({
           inningsNumber: inns.inningsNumber,
-          battingTeamName: inns.battingTeam?.name ?? `Innings ${inns.inningsNumber}`,
-          totalRuns: inns.totalRuns,
-          wickets: inns.wickets,
-          overs: `${inns.currentOver}.${inns.legalBallsInOver}`,
+          battingTeamName: inns.battingTeamName ?? inns.battingTeam?.name ?? `Innings ${inns.inningsNumber}`,
+          totalRuns: inns.totalRuns ?? 0,
+          wickets: inns.wickets ?? 0,
+          overs: `${inns.overs ?? inns.currentOver ?? 0}.${inns.balls ?? inns.legalBallsInOver ?? 0}`,
           extras: {
-            wides: inns.extrasWides ?? 0,
-            noBalls: inns.extrasNoBalls ?? 0,
-            byes: inns.extrasByes ?? 0,
-            legByes: inns.extrasLegByes ?? 0,
-            total: (inns.extrasWides ?? 0) + (inns.extrasNoBalls ?? 0) + (inns.extrasByes ?? 0) + (inns.extrasLegByes ?? 0),
+            wides: inns.extras?.wides ?? inns.extrasWides ?? 0,
+            noBalls: inns.extras?.noBalls ?? inns.extrasNoBalls ?? 0,
+            byes: inns.extras?.byes ?? inns.extrasByes ?? 0,
+            legByes: inns.extras?.legByes ?? inns.extrasLegByes ?? 0,
+            total: inns.extras?.total ?? (
+              (inns.extrasWides ?? 0) +
+              (inns.extrasNoBalls ?? 0) +
+              (inns.extrasByes ?? 0) +
+              (inns.extrasLegByes ?? 0)
+            ),
           },
-          batting: (inns.batting ?? inns.batterStats ?? []).map((b: any) => ({
+          batting: (inns.batsmen ?? inns.batting ?? inns.batterStats ?? []).map((b: any) => ({
             playerName: b.playerName ?? b.player?.name ?? '—',
             runs: b.runs ?? 0,
             balls: b.balls ?? 0,
@@ -110,9 +116,9 @@ export default function ScorecardScreen({ route }: Props) {
             isOut: b.isOut ?? false,
             dismissalInfo: b.dismissalInfo ?? b.howOut,
           })),
-          bowling: (inns.bowling ?? inns.bowlerStats ?? []).map((b: any) => ({
+          bowling: (inns.bowlers ?? inns.bowling ?? inns.bowlerStats ?? []).map((b: any) => ({
             playerName: b.playerName ?? b.player?.name ?? '—',
-            overs: b.overs ?? 0,
+            overs: `${b.overs ?? 0}.${b.balls ?? 0}`,
             maidens: b.maidens ?? 0,
             runs: b.runs ?? 0,
             wickets: b.wickets ?? 0,
@@ -122,6 +128,12 @@ export default function ScorecardScreen({ route }: Props) {
           })),
         }));
         setInnings(cards);
+        if (currentInningsId) {
+          const currentIndex = (data.innings ?? []).findIndex((inns: any) => inns.inningsId === currentInningsId);
+          if (currentIndex >= 0) {
+            setActiveInnings(currentIndex);
+          }
+        }
       })
       .catch(() => setError('Failed to load scorecard'))
       .finally(() => setIsLoading(false));

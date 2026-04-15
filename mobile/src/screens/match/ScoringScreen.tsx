@@ -324,14 +324,12 @@ export default function ScoringScreen({ route, navigation }: Props) {
         teamAPI.get(battTeamId),
         teamAPI.get(bowlTeamId),
       ]);
-      const battPlayers = (battRes.data?.players ?? []).map((tp: any) => ({
+      const battTeamPlayers = (battRes.data?.players ?? []).map((tp: any) => ({
         id: tp.player.id, name: tp.player.name,
       }));
-      const bowlPlayers = (bowlRes.data?.players ?? []).map((tp: any) => ({
+      const bowlTeamPlayers = (bowlRes.data?.players ?? []).map((tp: any) => ({
         id: tp.player.id, name: tp.player.name,
       }));
-      setBattingPlayers(battPlayers);
-      setBowlingPlayers(bowlPlayers);
       setTeamNames({
         batting: battRes.data?.name ?? 'Batting',
         bowling: bowlRes.data?.name ?? 'Bowling',
@@ -342,11 +340,23 @@ export default function ScoringScreen({ route, navigation }: Props) {
       const bowlingEntries = (scorecardInnings?.bowlers ?? scorecardInnings?.bowling ?? [])
         .filter((player: any) => player.playerId);
 
+      const inningsBattingPlayers: PlayerInfo[] = battingEntries.map((player: any) => ({
+        id: player.playerId,
+        name: player.playerName ?? battTeamPlayers.find((p: PlayerInfo) => p.id === player.playerId)?.name ?? player.playerId,
+      }));
+      const inningsBowlingPlayers: PlayerInfo[] = bowlingEntries.map((player: any) => ({
+        id: player.playerId,
+        name: player.playerName ?? bowlTeamPlayers.find((p: PlayerInfo) => p.id === player.playerId)?.name ?? player.playerId,
+      }));
+
+      setBattingPlayers(inningsBattingPlayers);
+      setBowlingPlayers(inningsBowlingPlayers);
+
       const hydratedBatting = new Map<string, BatsmanLiveStats>();
       battingEntries.forEach((player: any) => {
         hydratedBatting.set(player.playerId, {
           playerId: player.playerId,
-          name: player.playerName ?? battPlayers.find((p: PlayerInfo) => p.id === player.playerId)?.name ?? player.playerId,
+          name: player.playerName ?? inningsBattingPlayers.find((p: PlayerInfo) => p.id === player.playerId)?.name ?? player.playerId,
           runs: player.runs ?? 0,
           balls: player.balls ?? 0,
           fours: player.fours ?? 0,
@@ -365,7 +375,7 @@ export default function ScoringScreen({ route, navigation }: Props) {
         const totalLegalBalls = completedOvers * 6 + ballsThisOver;
         hydratedBowling.set(player.playerId, {
           playerId: player.playerId,
-          name: player.playerName ?? bowlPlayers.find((p: PlayerInfo) => p.id === player.playerId)?.name ?? player.playerId,
+          name: player.playerName ?? inningsBowlingPlayers.find((p: PlayerInfo) => p.id === player.playerId)?.name ?? player.playerId,
           overs: completedOvers,
           legalBalls: totalLegalBalls,
           runs: player.runs ?? 0,
@@ -378,7 +388,7 @@ export default function ScoringScreen({ route, navigation }: Props) {
         setBowlerStats(hydratedBowling);
       }
 
-      const onStrike = battingEntries.find((player: any) => player.onStrike);
+      const onStrike = battingEntries.find((player: any) => player.onStrike && !player.isOut);
       const notOutBatsmen = battingEntries.filter((player: any) => !player.isOut);
       const fallbackStriker = onStrike ?? notOutBatsmen[0] ?? battingEntries[0];
       const fallbackNonStriker =
@@ -388,12 +398,18 @@ export default function ScoringScreen({ route, navigation }: Props) {
 
       if (fallbackStriker?.playerId) {
         setStrikerId(fallbackStriker.playerId);
+      } else {
+        setStrikerId('');
       }
       if (fallbackNonStriker?.playerId) {
         setNonStrikerId(fallbackNonStriker.playerId);
+      } else {
+        setNonStrikerId('');
       }
       if (currentBowler?.playerId) {
         setBowlerId(currentBowler.playerId);
+      } else {
+        setBowlerId('');
       }
 
       // Initialize local innings state (for score header before first ball is bowled)
@@ -407,7 +423,7 @@ export default function ScoringScreen({ route, navigation }: Props) {
         });
       }
 
-      setNeedsSetup(false);
+      setNeedsSetup(!(fallbackStriker?.playerId && fallbackNonStriker?.playerId && currentBowler?.playerId));
     } catch (e) {
       // silently fail — UI will show defaults
     }
@@ -550,6 +566,17 @@ export default function ScoringScreen({ route, navigation }: Props) {
       if (!strikerId) setShowStrikerPicker(true);
       else if (!nonStrikerId) setShowNonStrikerPicker(true);
       else setShowBowlerPicker(true);
+      return;
+    }
+
+    const hasStriker = battingPlayers.some((player) => player.id === strikerId);
+    const hasNonStriker = battingPlayers.some((player) => player.id === nonStrikerId);
+    const hasBowler = bowlingPlayers.some((player) => player.id === bowlerId);
+
+    if (!hasStriker || !hasNonStriker || !hasBowler) {
+      void loadInnings();
+      const alertMsg = 'Scoring players were out of sync with this innings. The screen has been refreshed, please try again.';
+      if (Platform.OS === 'web') { window.alert(alertMsg); } else { Alert.alert('Players Refreshed', alertMsg); }
       return;
     }
 

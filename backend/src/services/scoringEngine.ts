@@ -5,6 +5,7 @@
  */
 
 import { PrismaClient, Prisma } from '@prisma/client';
+import { AppError } from '../middleware/errorHandler';
 
 const prisma = new PrismaClient();
 
@@ -601,10 +602,14 @@ export class ScoringEngine implements ScoringEngineInterface {
       const nextBallInOver = overComplete ? 0 : currentBallInOver + 1;
 
       // 6. Load current players
-      const currentBatsman = await tx.inningsPlayer.findFirstOrThrow({
+      const currentBatsman = await tx.inningsPlayer.findFirst({
         where: { inningsId, playerId: ballInput.batsmanId, isOut: false, role: 'BATSMAN' },
         include: { player: true },
       });
+
+      if (!currentBatsman) {
+        throw new AppError(400, `Selected striker is not part of this innings: ${ballInput.batsmanId}`);
+      }
 
       if (!currentBatsman.isOnField || !currentBatsman.isOnStrike) {
         await tx.inningsPlayer.updateMany({
@@ -652,10 +657,14 @@ export class ScoringEngine implements ScoringEngineInterface {
         });
       }
 
-      const currentBowler = await tx.inningsPlayer.findFirstOrThrow({
+      const currentBowler = await tx.inningsPlayer.findFirst({
         where: { inningsId, playerId: ballInput.bowlerId, role: 'BOWLER' },
         include: { player: true },
       });
+
+      if (!currentBowler) {
+        throw new AppError(400, `Selected bowler is not part of this innings: ${ballInput.bowlerId}`);
+      }
 
       if (!currentBowler.isCurrentBowler || !currentBowler.isOnField) {
         await tx.inningsPlayer.updateMany({
@@ -779,8 +788,6 @@ export class ScoringEngine implements ScoringEngineInterface {
       let dismissedPlayer: any = null;
       const totalPlayers = innings.playingXI
         ? (JSON.parse(innings.playingXI as string) as string[]).length : 11;
-      let strikeChangedForWicket = false;
-
       let incomingBatsmanId: string | undefined;
 
       if (ballInput.isWicket && ballInput.dismissedPlayerId) {
@@ -854,19 +861,6 @@ export class ScoringEngine implements ScoringEngineInterface {
         strikeChanged = effectiveRuns % 2 === 0; // if even runs + end of over = swap
       }
 
-      // Update striker/non-striker in DB
-      if (strikeChanged && !isInningsComplete) {
-        // Swap on-strike designation
-        await tx.inningsPlayer.update({
-          where: { id: currentBatsman.id },
-          data: { isOnStrike: false },
-        });
-        await tx.inningsPlayer.update({
-          where: { id: nonStriker.id },
-          data: { isOnStrike: true },
-        });
-      }
-
       // 13. Check over-limit completion
       const maxOvers = innings.match.oversPerInnings as number;
       const newTotalOvers = nextOverNumber;
@@ -902,7 +896,6 @@ export class ScoringEngine implements ScoringEngineInterface {
           extrasPenalties: newExtrasPenalties,
           nextBallIsFreeBit: ballInput.isNoBall ? true : (innings.nextBallIsFreeBit ? false : false),
           state: newState,
-          ...(overComplete ? { lastCompletedOver: currentOverNumber } : {}),
         },
       });
 
@@ -962,6 +955,33 @@ export class ScoringEngine implements ScoringEngineInterface {
           currentBatsmanIdForUpdate = incomingBatsmanId;
           nonStrikerIdForUpdate = nonStriker.playerId;
         }
+      }
+
+      if (!isInningsComplete) {
+        await tx.inningsPlayer.updateMany({
+          where: { inningsId, role: 'BATSMAN' },
+          data: { isOnStrike: false },
+        });
+
+        await tx.inningsPlayer.updateMany({
+          where: {
+            inningsId,
+            role: 'BATSMAN',
+            playerId: currentBatsmanIdForUpdate,
+            isOut: false,
+          },
+          data: { isOnStrike: true, isOnField: true },
+        });
+
+        await tx.inningsPlayer.updateMany({
+          where: {
+            inningsId,
+            role: 'BATSMAN',
+            playerId: nonStrikerIdForUpdate,
+            isOut: false,
+          },
+          data: { isOnField: true },
+        });
       }
 
       const inningsUpdate: InningsUpdate = {

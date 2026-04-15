@@ -16,7 +16,10 @@ const STORAGE_KEYS = {
 };
 
 let isRefreshing = false;
-let refreshQueue: Array<(token: string) => void> = [];
+let refreshQueue: Array<{
+  resolve: (token: string) => void;
+  reject: (error: unknown) => void;
+}> = [];
 
 export const api: AxiosInstance = axios.create({
   baseURL: BASE_URL,
@@ -47,10 +50,13 @@ api.interceptors.response.use(
     original._retry = true;
 
     if (isRefreshing) {
-      return new Promise((resolve) => {
-        refreshQueue.push((token: string) => {
-          original.headers.Authorization = `Bearer ${token}`;
-          resolve(api(original));
+      return new Promise((resolve, reject) => {
+        refreshQueue.push({
+          resolve: (token: string) => {
+            original.headers.Authorization = `Bearer ${token}`;
+            resolve(api(original));
+          },
+          reject,
         });
       });
     }
@@ -63,15 +69,24 @@ api.interceptors.response.use(
       const { data } = await axios.post(`${BASE_URL}/auth/refresh`, { refreshToken });
       await storeTokens(data.accessToken, data.refreshToken);
 
-      refreshQueue.forEach((cb) => cb(data.accessToken));
+      refreshQueue.forEach(({ resolve }) => resolve(data.accessToken));
       refreshQueue = [];
 
       original.headers.Authorization = `Bearer ${data.accessToken}`;
       return api(original);
     } catch {
       await clearTokens();
+
+      const sessionError: any = new Error('Session expired. Please log in again.');
+      sessionError.response = {
+        status: 401,
+        data: { error: 'Session expired. Please log in again.' },
+      };
+
+      refreshQueue.forEach(({ reject }) => reject(sessionError));
       refreshQueue = [];
-      return Promise.reject(error);
+
+      return Promise.reject(sessionError);
     } finally {
       isRefreshing = false;
     }
