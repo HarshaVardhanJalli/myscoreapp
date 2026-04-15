@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "90130778909",
+    "project_id": "myscoreapp-217ec",
+    "storage_bucket": "myscoreapp-217ec.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:90130778909:android:d8d1be0e8adfa1c18feff4",
+        "android_client_info": {
+          "package_name": "com.myscoreapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "90130778909-gvlv08m00r7i47jl09eaa9v9col04psn.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC8paIL56h_PjSfjt3XV_icso-HevMATDk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "90130778909-gvlv08m00r7i47jl09eaa9v9col04psn.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "90130778909-algmfr9o2hcfa24jsn2o1poe36cdonl6.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.myscoreapp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
