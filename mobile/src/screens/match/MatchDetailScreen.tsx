@@ -8,6 +8,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Alert, ActivityIndicator,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { fetchMatch } from '../../store/slices/matchSlice';
@@ -31,6 +32,12 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     dispatch(fetchMatch(matchId));
   }, [matchId, dispatch]);
 
+  useFocusEffect(
+    React.useCallback(() => {
+      dispatch(fetchMatch(matchId));
+    }, [dispatch, matchId]),
+  );
+
   if (isLoading || !match) {
     return (
       <View style={styles.loader}>
@@ -42,9 +49,68 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   const currentMatch = match;
   const isOwner = (currentMatch.createdById ?? currentMatch.createdByUser?.id) === user?.id;
   const isLive = currentMatch.status === 'PLAYING' || currentMatch.status === 'SECOND_INNINGS';
+  const isCompleted = currentMatch.status === 'COMPLETED';
   const innings = currentMatch.innings ?? [];
   const inns1 = innings[0];
   const inns2 = innings[1];
+
+  function formatOvers(over?: number, balls?: number) {
+    return `${over ?? 0}.${balls ?? 0}`;
+  }
+
+  function getTeamById(teamId?: string) {
+    if (!teamId) return undefined;
+    if (teamId === currentMatch.team1.id) return currentMatch.team1;
+    if (teamId === currentMatch.team2.id) return currentMatch.team2;
+    return undefined;
+  }
+
+  function getInningsByTeam(teamId?: string) {
+    if (!teamId) return undefined;
+    return innings.find((entry) => entry.battingTeamId === teamId);
+  }
+
+  const derivedWinnerTeamId = currentMatch.winnerTeamId ?? (
+    isCompleted && inns1 && inns2
+      ? (inns2.totalRuns > inns1.totalRuns
+        ? inns2.battingTeamId
+        : (inns1.totalRuns > inns2.totalRuns ? inns1.battingTeamId : undefined))
+      : undefined
+  );
+  const winnerTeam = getTeamById(derivedWinnerTeamId);
+  const winningInnings = getInningsByTeam(derivedWinnerTeamId);
+  const opponentTeam = winnerTeam?.id === currentMatch.team1.id ? currentMatch.team2 : currentMatch.team1;
+  const opponentInnings = getInningsByTeam(opponentTeam?.id);
+
+  let resultHeadline = currentMatch.resultDescription ?? 'Match result';
+  let resultMarginValue: string | undefined;
+  let resultMarginLabel: string | undefined;
+  let resultSecondary = currentMatch.resultDescription;
+
+  if (isCompleted && winnerTeam && inns1 && inns2) {
+    if (derivedWinnerTeamId === inns2.battingTeamId && inns2.totalRuns > inns1.totalRuns) {
+      const chasingTeam = getTeamById(inns2.battingTeamId);
+      const wicketsRemaining = Math.max(0, getSquad(chasingTeam).length - 1 - inns2.wickets);
+      resultHeadline = `${winnerTeam.name} won the match`;
+      resultMarginValue = `${wicketsRemaining}`;
+      resultMarginLabel = 'Wickets';
+      resultSecondary = `Target ${inns1.totalRuns + 1} chased in ${formatOvers(inns2.currentOver, inns2.legalBallsInOver)} overs`;
+    } else if (derivedWinnerTeamId === inns1.battingTeamId && inns1.totalRuns > inns2.totalRuns) {
+      const margin = Math.max(0, inns1.totalRuns - inns2.totalRuns);
+      resultHeadline = `${winnerTeam.name} won the match`;
+      resultMarginValue = `${margin}`;
+      resultMarginLabel = 'Runs';
+      resultSecondary = `Defended ${inns1.totalRuns}/${inns1.wickets} against ${getTeamById(inns2.battingTeamId)?.name ?? opponentTeam?.name ?? 'the chase'}`;
+    } else if (inns1.totalRuns === inns2.totalRuns) {
+      resultHeadline = currentMatch.resultDescription ?? 'Match tied';
+      resultMarginValue = 'Tied';
+      resultMarginLabel = 'Result';
+      resultSecondary = 'Scores finished level';
+    }
+  } else if (isCompleted && !winnerTeam && currentMatch.resultDescription) {
+    resultHeadline = currentMatch.resultDescription;
+    resultSecondary = 'Scores finished level';
+  }
 
   function getSquad(team: any) {
     return ((team?.players ?? []) as any[])
@@ -142,7 +208,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
           <Text style={styles.teamName}>{currentMatch.team1.name}</Text>
           {inns1 && (
             <Text style={styles.innsScore}>
-              {inns1.totalRuns}/{inns1.wickets} ({inns1.currentOver}.{inns1.legalBallsInOver})
+              {inns1.totalRuns}/{inns1.wickets} ({formatOvers(inns1.currentOver, inns1.legalBallsInOver)})
             </Text>
           )}
         </View>
@@ -152,13 +218,50 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
           <Text style={styles.teamName}>{currentMatch.team2.name}</Text>
           {inns2 && (
             <Text style={styles.innsScore}>
-              {inns2.totalRuns}/{inns2.wickets} ({inns2.currentOver}.{inns2.legalBallsInOver})
+              {inns2.totalRuns}/{inns2.wickets} ({formatOvers(inns2.currentOver, inns2.legalBallsInOver)})
             </Text>
           )}
         </View>
       </View>
 
-      {currentMatch.resultDescription && (
+      {isCompleted && (
+        <View style={styles.resultHero}>
+          <View style={styles.resultHeroHeader}>
+            <Text style={styles.resultEyebrow}>Match Result</Text>
+            {winnerTeam && (
+              <View style={styles.resultWinnerPill}>
+                <Text style={styles.resultWinnerPillText}>{winnerTeam.shortName}</Text>
+              </View>
+            )}
+          </View>
+
+          <Text style={styles.resultHeadline}>{resultHeadline}</Text>
+          {resultSecondary ? <Text style={styles.resultSecondary}>{resultSecondary}</Text> : null}
+
+          <View style={styles.resultMetrics}>
+            <View style={styles.resultMetricPrimary}>
+              <Text style={styles.resultMetricValue}>{resultMarginValue ?? 'Tied'}</Text>
+              <Text style={styles.resultMetricLabel}>{resultMarginLabel ?? 'Result'}</Text>
+            </View>
+            <View style={styles.resultMetricSide}>
+              <View style={styles.resultScoreChip}>
+                <Text style={styles.resultScoreLabel}>{winnerTeam?.shortName ?? 'Winner'}</Text>
+                <Text style={styles.resultScoreValue}>
+                  {winningInnings ? `${winningInnings.totalRuns}/${winningInnings.wickets}` : '—'}
+                </Text>
+              </View>
+              <View style={styles.resultScoreChip}>
+                <Text style={styles.resultScoreLabel}>{opponentTeam?.shortName ?? 'Opposition'}</Text>
+                <Text style={styles.resultScoreValue}>
+                  {opponentInnings ? `${opponentInnings.totalRuns}/${opponentInnings.wickets}` : '—'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {!isCompleted && currentMatch.resultDescription && (
         <View style={styles.resultCard}>
           <Text style={styles.resultText}>{currentMatch.resultDescription}</Text>
         </View>
@@ -359,6 +462,105 @@ const styles = StyleSheet.create({
   },
 
   /* ── Result ── */
+  resultHero: {
+    backgroundColor: 'rgba(255,255,255,0.84)',
+    borderRadius: 24,
+    padding: 22,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(99,102,241,0.14)',
+    ...shadows.card,
+  },
+  resultHeroHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  resultEyebrow: {
+    fontSize: 11,
+    color: '#7C88B6',
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  resultWinnerPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: 'rgba(99,102,241,0.16)',
+  },
+  resultWinnerPillText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#4F46E5',
+  },
+  resultHeadline: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#1A1F36',
+    marginBottom: 8,
+  },
+  resultSecondary: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#6B7394',
+    marginBottom: 18,
+  },
+  resultMetrics: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  resultMetricPrimary: {
+    flex: 1,
+    borderRadius: 20,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    backgroundColor: '#1A1F36',
+    justifyContent: 'center',
+  },
+  resultMetricValue: {
+    fontSize: 34,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  resultMetricLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#A5B4FC',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  resultMetricSide: {
+    flex: 1,
+    gap: 10,
+  },
+  resultScoreChip: {
+    flex: 1,
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    backgroundColor: '#F8FAFF',
+    borderWidth: 1,
+    borderColor: 'rgba(99,102,241,0.10)',
+    justifyContent: 'center',
+  },
+  resultScoreLabel: {
+    fontSize: 11,
+    color: '#8A94B6',
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+    marginBottom: 6,
+  },
+  resultScoreValue: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1A1F36',
+  },
   resultCard: {
     backgroundColor: 'rgba(255,255,255,0.76)',
     borderRadius: 20,

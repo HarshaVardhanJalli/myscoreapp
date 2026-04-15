@@ -8,7 +8,7 @@ import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   TextInput,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { fetchMatches } from '../../store/slices/matchSlice';
@@ -26,11 +26,43 @@ const TABS = [
   { label: 'Done', filter: 'COMPLETED' },
 ];
 
+function deriveCompletedResult(match: Match): string | undefined {
+  if (match.resultDescription) {
+    return match.resultDescription;
+  }
+  if (match.status !== 'COMPLETED') {
+    return undefined;
+  }
+
+  const innings = match.innings ?? [];
+  const inns1 = innings[0];
+  const inns2 = innings[1];
+  if (!inns1 || !inns2) {
+    return undefined;
+  }
+
+  const getTeamName = (teamId?: string) => {
+    if (teamId === match.team1.id) return match.team1.name;
+    if (teamId === match.team2.id) return match.team2.name;
+    return 'Team';
+  };
+
+  if (inns2.totalRuns > inns1.totalRuns) {
+    return `${getTeamName(inns2.battingTeamId)} won`;
+  }
+  if (inns1.totalRuns > inns2.totalRuns) {
+    return `${getTeamName(inns1.battingTeamId)} won by ${inns1.totalRuns - inns2.totalRuns} runs`;
+  }
+
+  return 'Match tied';
+}
+
 function MatchRow({ match, onPress }: { match: Match; onPress: () => void }) {
   const isLive = match.status === 'PLAYING' || match.status === 'SECOND_INNINGS';
   const innings = match.innings ?? [];
   const inns1 = innings[0];
   const inns2 = innings[1];
+  const resultText = deriveCompletedResult(match);
 
   return (
     <TouchableOpacity activeOpacity={0.88} onPress={onPress}>
@@ -47,8 +79,8 @@ function MatchRow({ match, onPress }: { match: Match; onPress: () => void }) {
           <Text style={styles.rowTeam}>{match.team2.shortName}</Text>
           <Text style={styles.rowScore}>{inns2 ? `${inns2.totalRuns}/${inns2.wickets}` : '—'}</Text>
         </View>
-        {!!match.resultDescription && <Text style={styles.rowResult}>{match.resultDescription}</Text>}
-        {!match.resultDescription && !!match.venueName && <Text style={styles.rowVenue}>{match.venueName}</Text>}
+        {!!resultText && <Text style={styles.rowResult}>{resultText}</Text>}
+        {!resultText && !!match.venueName && <Text style={styles.rowVenue}>{match.venueName}</Text>}
       </GlassCard>
     </TouchableOpacity>
   );
@@ -70,6 +102,12 @@ export default function MatchListScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   const filtered = search.trim()
     ? matches.filter((match) =>

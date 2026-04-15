@@ -92,24 +92,37 @@ export function GradientButton({
   label,
   onPress,
   accent = false,
+  disabled = false,
+  loading = false,
   style,
   textStyle,
 }: {
   label: string;
   onPress: () => void;
   accent?: boolean;
+  disabled?: boolean;
+  loading?: boolean;
   style?: ViewStyle;
   textStyle?: TextStyle;
 }) {
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.88} style={style}>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.88}
+      disabled={disabled || loading}
+      style={style}
+    >
       <LinearGradient
         colors={accent ? gradients.accent : gradients.hero}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={[styles.button, accent ? shadows.glow : shadows.card]}
+        style={[
+          styles.button,
+          accent ? shadows.glow : shadows.card,
+          (disabled || loading) && styles.buttonDisabled,
+        ]}
       >
-        <Text style={[styles.buttonText, textStyle]}>{label}</Text>
+        <Text style={[styles.buttonText, textStyle]}>{loading ? 'Please wait...' : label}</Text>
       </LinearGradient>
     </TouchableOpacity>
   );
@@ -194,6 +207,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  buttonDisabled: {
+    opacity: 0.72,
   },
   buttonText: {
     color: colors.primaryDark,

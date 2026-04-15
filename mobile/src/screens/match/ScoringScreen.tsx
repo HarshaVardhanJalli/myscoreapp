@@ -4,14 +4,14 @@
  * created_by: MyCricketScoreEngine_v1
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Alert, Modal, ActivityIndicator, FlatList, Platform,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { fetchMatch, processBall, undoLastBall, endOver } from '../../store/slices/scoringSlice';
+import { fetchMatch, processBall, undoLastBall, endOver, resetScoring } from '../../store/slices/scoringSlice';
 import { inningsAPI, matchAPI, teamAPI } from '../../services/api';
 import { WicketType, BallInput } from '../../types';
 import { RootStackParamList } from '../../navigation';
@@ -256,6 +256,7 @@ export default function ScoringScreen({ route, navigation }: Props) {
   const { matchId, inningsId } = route.params;
   const dispatch = useAppDispatch();
   const { inningsUpdate, commentaryFeed, isLoading, lastBall, error } = useAppSelector((s) => s.scoring);
+  const handledBallIdRef = useRef<string | null>(null);
   // Local fallback for initial innings state (before first ball is bowled)
   const [localInningsState, setLocalInningsState] = useState<{
     totalRuns: number; wickets: number; overs: number; balls: number; target?: number;
@@ -297,6 +298,12 @@ export default function ScoringScreen({ route, navigation }: Props) {
 
   // Initial setup flag
   const [needsSetup, setNeedsSetup] = useState(true);
+
+  useEffect(() => {
+    handledBallIdRef.current = lastBall?.ball?.id ?? null;
+    dispatch(resetScoring());
+    setOverBalls([]);
+  }, [dispatch, inningsId]);
 
   // ─── Load innings data ───────────────────────────────────────────────────
 
@@ -438,6 +445,10 @@ export default function ScoringScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     if (!lastBall) return;
+    if (lastBall.ball.inningsId !== inningsId) return;
+    if (handledBallIdRef.current === lastBall.ball.id) return;
+
+    handledBallIdRef.current = lastBall.ball.id;
 
     const ball = lastBall.ball;
     const update = lastBall.inningsUpdate;
@@ -541,15 +552,23 @@ export default function ScoringScreen({ route, navigation }: Props) {
     }
 
     // Innings/match complete
-    if (lastBall.isInningsComplete || lastBall.isMatchComplete) {
+    if (lastBall.isMatchComplete) {
       const alertFn = Platform.OS === 'web' ? (t: string, m: string) => { window.alert(`${t}\n${m}`); navigation.replace('Scorecard', { matchId }); }
         : (t: string, m: string) => Alert.alert(t, m, [{ text: 'View Scorecard', onPress: () => navigation.replace('Scorecard', { matchId }) }]);
-      alertFn(
-        lastBall.isMatchComplete ? 'Match Complete' : 'Innings Complete',
-        lastBall.commentary,
-      );
+
+      void matchAPI.get(matchId)
+        .then((response) => {
+          alertFn('Match Complete', response.data?.resultDescription || lastBall.commentary);
+        })
+        .catch(() => {
+          alertFn('Match Complete', lastBall.commentary);
+        });
+    } else if (lastBall.isInningsComplete) {
+      const alertFn = Platform.OS === 'web' ? (t: string, m: string) => { window.alert(`${t}\n${m}`); navigation.replace('Scorecard', { matchId }); }
+        : (t: string, m: string) => Alert.alert(t, m, [{ text: 'View Scorecard', onPress: () => navigation.replace('Scorecard', { matchId }) }]);
+      alertFn('Innings Complete', lastBall.commentary);
     }
-  }, [lastBall]);
+  }, [inningsId, lastBall, navigation, matchId, battingPlayers, bowlingPlayers]);
 
   // ─── Ball input handlers ─────────────────────────────────────────────────
 

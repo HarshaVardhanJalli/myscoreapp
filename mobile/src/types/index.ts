@@ -96,7 +96,13 @@ export interface Match {
   winnerTeamId?: string;
   isPublic: boolean;
   createdBy: string;
+  createdById?: string;
   createdByTag: string;
+  createdByUser?: {
+    id: string;
+    name?: string;
+    username?: string;
+  };
   toss?: Toss;
   innings?: InningsSummary[];
   _count?: { likes: number; comments: number };

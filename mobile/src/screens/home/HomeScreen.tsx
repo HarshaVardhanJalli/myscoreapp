@@ -3,13 +3,13 @@
  * created_by: MyCricketScoreEngine_v1
  */
 
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet,
+  View, Text, TouchableOpacity, StyleSheet, Alert,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { fetchMatches } from '../../store/slices/matchSlice';
@@ -17,14 +17,47 @@ import { RootStackParamList } from '../../navigation';
 import { Match } from '../../types';
 import { colors, font, gradients, radius, shadows, spacing, typography } from '../../theme';
 import { GlassCard, GradientButton, Pill, ScreenShell, SectionHeading } from '../../components/ui';
+import { launchIndiaPakistanTestMatch } from '../../services/testMatch';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+
+function deriveCompletedResult(match: Match): string | undefined {
+  if (match.resultDescription) {
+    return match.resultDescription;
+  }
+  if (match.status !== 'COMPLETED') {
+    return undefined;
+  }
+
+  const innings = match.innings ?? [];
+  const inns1 = innings[0];
+  const inns2 = innings[1];
+  if (!inns1 || !inns2) {
+    return undefined;
+  }
+
+  const getTeamName = (teamId?: string) => {
+    if (teamId === match.team1.id) return match.team1.name;
+    if (teamId === match.team2.id) return match.team2.name;
+    return 'Team';
+  };
+
+  if (inns2.totalRuns > inns1.totalRuns) {
+    return `${getTeamName(inns2.battingTeamId)} won`;
+  }
+  if (inns1.totalRuns > inns2.totalRuns) {
+    return `${getTeamName(inns1.battingTeamId)} won by ${inns1.totalRuns - inns2.totalRuns} runs`;
+  }
+
+  return 'Match tied';
+}
 
 function MatchCard({ match, onPress }: { match: Match; onPress: () => void }) {
   const innings = match.innings ?? [];
   const inns1 = innings[0];
   const inns2 = innings[1];
   const isLive = match.status === 'PLAYING' || match.status === 'SECOND_INNINGS';
+  const resultText = deriveCompletedResult(match);
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.88}>
@@ -49,7 +82,7 @@ function MatchCard({ match, onPress }: { match: Match; onPress: () => void }) {
             </Text>
           </View>
         </View>
-        {!!match.resultDescription && <Text style={styles.result}>{match.resultDescription}</Text>}
+        {!!resultText && <Text style={styles.result}>{resultText}</Text>}
         {!!match.venueName && <Text style={styles.venue}>{match.venueName}</Text>}
       </GlassCard>
     </TouchableOpacity>
@@ -61,6 +94,7 @@ export default function HomeScreen() {
   const dispatch = useAppDispatch();
   const { matches, isLoading } = useAppSelector((state) => state.matches);
   const { user } = useAppSelector((state) => state.auth);
+  const [isLaunchingTestMatch, setIsLaunchingTestMatch] = useState(false);
 
   const load = useCallback(() => {
     dispatch(fetchMatches({ limit: 10 }));
@@ -69,6 +103,32 @@ export default function HomeScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      load();
+    }, [load]),
+  );
+
+  async function handleLaunchTestMatch() {
+    if (isLaunchingTestMatch) {
+      return;
+    }
+
+    try {
+      setIsLaunchingTestMatch(true);
+      const fixture = await launchIndiaPakistanTestMatch();
+      await load();
+      navigation.navigate('Scoring', fixture);
+    } catch (error: any) {
+      Alert.alert(
+        'Fixture setup failed',
+        error?.response?.data?.error || error?.message || 'Could not start the India vs Pakistan test fixture.',
+      );
+    } finally {
+      setIsLaunchingTestMatch(false);
+    }
+  }
 
   const liveMatches = matches.filter((match) => match.status === 'PLAYING' || match.status === 'SECOND_INNINGS');
   const recentMatches = matches.filter((match) => match.status !== 'PLAYING' && match.status !== 'SECOND_INNINGS').slice(0, 4);
@@ -94,6 +154,42 @@ export default function HomeScreen() {
         </View>
         <GradientButton label="Start New Match" onPress={() => navigation.navigate('NewMatch')} accent style={styles.heroButton} />
       </LinearGradient>
+
+      <GlassCard style={styles.fixtureCard}>
+        <View style={styles.fixtureHeader}>
+          <View style={styles.fixtureIconWrap}>
+            <Ionicons name="flash-outline" size={20} color={colors.primary} />
+          </View>
+          <View style={styles.fixtureHeaderText}>
+            <Text style={styles.fixtureEyebrow}>Testing shortcut</Text>
+            <Text style={styles.fixtureTitle}>Fresh India vs Pakistan in one tap</Text>
+          </View>
+          <Pill label="5 overs" active />
+        </View>
+
+        <Text style={styles.fixtureDescription}>
+          Launch a brand-new private fixture with preset real-player names, fixed XIs, toss, and the first innings ready to score.
+        </Text>
+
+        <View style={styles.fixtureRosterRow}>
+          <View style={styles.fixtureRosterCard}>
+            <Text style={styles.fixtureRosterLabel}>India XI</Text>
+            <Text style={styles.fixtureRosterValue}>Rohit, Virat, SKY, Hardik, Bumrah</Text>
+          </View>
+          <View style={styles.fixtureRosterCard}>
+            <Text style={styles.fixtureRosterLabel}>Pakistan XI</Text>
+            <Text style={styles.fixtureRosterValue}>Babar, Rizwan, Fakhar, Shaheen, Haris</Text>
+          </View>
+        </View>
+
+        <GradientButton
+          label="Start IND vs PAK Test"
+          onPress={handleLaunchTestMatch}
+          loading={isLaunchingTestMatch}
+          disabled={isLaunchingTestMatch}
+          style={styles.fixtureButton}
+        />
+      </GlassCard>
 
       <View style={styles.section}>
         <SectionHeading eyebrow="Quick launch" title="Move faster" />
@@ -213,6 +309,79 @@ const styles = StyleSheet.create({
   },
   heroButton: {
     marginTop: spacing.lg,
+  },
+  fixtureCard: {
+    gap: spacing.md,
+    padding: spacing.lg,
+    backgroundColor: 'rgba(255,255,255,0.80)',
+  },
+  fixtureHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  fixtureIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(223,232,255,0.90)',
+    borderWidth: 1,
+    borderColor: 'rgba(122,137,228,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fixtureHeaderText: {
+    flex: 1,
+    gap: 2,
+  },
+  fixtureEyebrow: {
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 1.1,
+    fontSize: font.xs,
+    fontWeight: '700',
+    fontFamily: typography.body,
+  },
+  fixtureTitle: {
+    color: colors.primaryDark,
+    fontSize: font.lg,
+    fontWeight: '800',
+    fontFamily: typography.display,
+  },
+  fixtureDescription: {
+    color: colors.textSecondary,
+    fontSize: font.sm,
+    lineHeight: 21,
+    fontFamily: typography.body,
+  },
+  fixtureRosterRow: {
+    gap: spacing.sm,
+  },
+  fixtureRosterCard: {
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    backgroundColor: 'rgba(245,247,255,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.52)',
+  },
+  fixtureRosterLabel: {
+    color: colors.primary,
+    fontSize: font.xs,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: spacing.xs,
+    fontFamily: typography.body,
+  },
+  fixtureRosterValue: {
+    color: colors.primaryDark,
+    fontSize: font.sm,
+    lineHeight: 20,
+    fontWeight: '700',
+    fontFamily: typography.body,
+  },
+  fixtureButton: {
+    marginTop: spacing.xs,
   },
 
   /* ── Sections ─────────────────────────────────────── */

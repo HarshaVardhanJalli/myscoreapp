@@ -520,6 +520,75 @@ function getHighLevelZone(zone: ShotZone): 'OFF_SIDE' | 'ON_SIDE' | 'STRAIGHT' {
   return 'STRAIGHT';
 }
 
+function getPlayingXICount(playingXI?: string | null): number {
+  if (!playingXI) return 11;
+
+  try {
+    const parsed = JSON.parse(playingXI) as unknown;
+    if (Array.isArray(parsed) && parsed.length >= 2) {
+      return parsed.length;
+    }
+  } catch {
+    // Fall back to standard cricket team size.
+  }
+
+  return 11;
+}
+
+function buildMatchResultFromScores(args: {
+  matchId: string;
+  firstBattingTeamId: string;
+  firstBattingTeamName: string;
+  firstTotal: number;
+  secondBattingTeamId: string;
+  secondBattingTeamName: string;
+  secondTotal: number;
+  secondWickets: number;
+  secondTeamPlayerCount: number;
+}): MatchResult {
+  const {
+    matchId,
+    firstBattingTeamId,
+    firstBattingTeamName,
+    firstTotal,
+    secondBattingTeamId,
+    secondBattingTeamName,
+    secondTotal,
+    secondWickets,
+    secondTeamPlayerCount,
+  } = args;
+
+  if (secondTotal > firstTotal) {
+    const wicketsRemaining = Math.max((secondTeamPlayerCount - 1) - secondWickets, 0);
+    return {
+      matchId,
+      winnerTeamId: secondBattingTeamId,
+      resultType: 'WON_BY_WICKETS',
+      margin: wicketsRemaining,
+      marginType: 'WICKETS',
+      resultDescription: `${secondBattingTeamName} won by ${wicketsRemaining} wickets`,
+    };
+  }
+
+  if (firstTotal > secondTotal) {
+    const margin = firstTotal - secondTotal;
+    return {
+      matchId,
+      winnerTeamId: firstBattingTeamId,
+      resultType: 'WON_BY_RUNS',
+      margin,
+      marginType: 'RUNS',
+      resultDescription: `${firstBattingTeamName} won by ${margin} runs`,
+    };
+  }
+
+  return {
+    matchId,
+    resultType: 'TIE',
+    resultDescription: 'Match tied! Super over may be needed.',
+  };
+}
+
 // ─── Scoring Engine ───────────────────────────────────────────────────────────
 
 export class ScoringEngine implements ScoringEngineInterface {
@@ -918,6 +987,37 @@ export class ScoringEngine implements ScoringEngineInterface {
         isMatchComplete = true;
       }
 
+      let matchResult: MatchResult | undefined;
+      if (isMatchComplete && innings.inningsNumber === 2) {
+        const [firstInnings, secondBattingTeam] = await Promise.all([
+          tx.innings.findFirstOrThrow({
+            where: {
+              matchId: innings.matchId,
+              inningsNumber: 1,
+            },
+            include: {
+              battingTeam: true,
+            },
+          }),
+          tx.team.findUniqueOrThrow({
+            where: { id: innings.battingTeamId as string },
+            select: { id: true, name: true },
+          }),
+        ]);
+
+        matchResult = buildMatchResultFromScores({
+          matchId: innings.matchId as string,
+          firstBattingTeamId: firstInnings.battingTeamId as string,
+          firstBattingTeamName: firstInnings.battingTeam?.name ?? 'Team 1',
+          firstTotal: firstInnings.totalRuns as number,
+          secondBattingTeamId: innings.battingTeamId as string,
+          secondBattingTeamName: secondBattingTeam.name,
+          secondTotal: newTotalRuns,
+          secondWickets: newWickets,
+          secondTeamPlayerCount: totalPlayers,
+        });
+      }
+
       // 17. Check milestones
       const milestones = await this._checkMilestones(tx, inningsId, ballInput,
         batsmanRunsToAdd, isBowlerWicket || false, currentBatsman, currentBowler, overComplete);
@@ -1029,7 +1129,11 @@ export class ScoringEngine implements ScoringEngineInterface {
       if (isMatchComplete) {
         await tx.match.update({
           where: { id: innings.matchId },
-          data: { status: MatchState.COMPLETED },
+          data: {
+            status: MatchState.COMPLETED,
+            resultDescription: matchResult?.resultDescription,
+            winnerTeamId: matchResult?.winnerTeamId ?? null,
+          },
         });
       } else if (isInningsComplete && innings.inningsNumber === 1) {
         await tx.match.update({
@@ -1583,40 +1687,19 @@ export class ScoringEngine implements ScoringEngineInterface {
     const firstTotal = firstInnings.totalRuns as number;
     const secondTotal = secondInnings.totalRuns as number;
     const secondWickets = secondInnings.wickets as number;
-    const secondState = secondInnings.state as InningsState;
+    const secondTeamPlayerCount = getPlayingXICount(secondInnings.playingXI as string | null);
 
-    let result: MatchResult;
-
-    if (secondTotal > firstTotal) {
-      // Batting team won by wickets
-      const wicketsRemaining = 10 - secondWickets;
-      result = {
-        matchId,
-        winnerTeamId: secondInnings.battingTeamId as string,
-        resultType: 'WON_BY_WICKETS',
-        margin: wicketsRemaining,
-        marginType: 'WICKETS',
-        resultDescription: `${secondInnings.battingTeam?.name} won by ${wicketsRemaining} wickets`,
-      };
-    } else if (firstTotal > secondTotal) {
-      // First batting team won by runs
-      const margin = firstTotal - secondTotal;
-      result = {
-        matchId,
-        winnerTeamId: firstInnings.battingTeamId as string,
-        resultType: 'WON_BY_RUNS',
-        margin,
-        marginType: 'RUNS',
-        resultDescription: `${firstInnings.battingTeam?.name} won by ${margin} runs`,
-      };
-    } else {
-      // Tie
-      result = {
-        matchId,
-        resultType: 'TIE',
-        resultDescription: 'Match tied! Super over may be needed.',
-      };
-    }
+    const result = buildMatchResultFromScores({
+      matchId,
+      firstBattingTeamId: firstInnings.battingTeamId as string,
+      firstBattingTeamName: firstInnings.battingTeam?.name ?? 'Team 1',
+      firstTotal,
+      secondBattingTeamId: secondInnings.battingTeamId as string,
+      secondBattingTeamName: secondInnings.battingTeam?.name ?? 'Team 2',
+      secondTotal,
+      secondWickets,
+      secondTeamPlayerCount,
+    });
 
     // Update match record
     await prisma.match.update({
@@ -1624,7 +1707,7 @@ export class ScoringEngine implements ScoringEngineInterface {
       data: {
         status: MatchState.COMPLETED,
         resultDescription: result.resultDescription,
-        winnerTeamId: result.winnerTeamId,
+        winnerTeamId: result.winnerTeamId ?? null,
       },
     });
 
