@@ -37,13 +37,33 @@ export class AuthController {
 
   async googleAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { idToken } = req.body;
-      if (!idToken) {
-        res.status(400).json({ error: 'idToken required' });
+      const { idToken, accessToken } = z.object({
+        idToken: z.string().optional(),
+        accessToken: z.string().optional(),
+      }).parse(req.body);
+      if (!idToken && !accessToken) {
+        res.status(400).json({ error: 'idToken or accessToken required' });
         return;
       }
-      const tokens = await authService.googleAuth(idToken);
+      const tokens = await authService.googleAuth(idToken, accessToken);
       res.json(tokens);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  // Called after passport.authenticate('google') succeeds via browser redirect flow.
+  // Passport has already found/created the user (req.user).
+  // Issues JWT tokens and deep-links back to the mobile app.
+  async googleCallback(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) {
+        res.redirect('myscoreapp://auth?error=no_user');
+        return;
+      }
+      const tokens = await authService.issueTokensForUser(req.user as any);
+      const url = `myscoreapp://auth?accessToken=${encodeURIComponent(tokens.accessToken)}&refreshToken=${encodeURIComponent(tokens.refreshToken)}`;
+      res.redirect(url);
     } catch (err) {
       next(err);
     }

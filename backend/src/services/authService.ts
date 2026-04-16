@@ -100,34 +100,60 @@ export class AuthService {
     return this.issueTokens(user);
   }
 
-  async googleAuth(idToken: string): Promise<AuthTokens> {
-    const ticket = await googleClient.verifyIdToken({
-      idToken,
-      audience: config.google.clientId,
-    });
-    const payload = ticket.getPayload();
-    if (!payload?.email) throw new AppError(400, 'Invalid Google token');
+  async googleAuth(idToken?: string, accessToken?: string): Promise<AuthTokens> {
+    let email: string;
+    let googleId: string;
+    let name: string | undefined;
+    let picture: string | undefined;
+
+    if (idToken) {
+      // Verify a Google ID token (JWT signed by Google)
+      const ticket = await googleClient.verifyIdToken({
+        idToken,
+        audience: config.google.clientId,
+      });
+      const payload = ticket.getPayload();
+      if (!payload?.email) throw new AppError(400, 'Invalid Google token');
+      email = payload.email;
+      googleId = payload.sub!;
+      name = payload.name;
+      picture = payload.picture;
+    } else if (accessToken) {
+      // Verify a Google access token by calling the userinfo endpoint
+      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) throw new AppError(400, 'Invalid Google access token');
+      const info = await res.json() as { sub?: string; email?: string; name?: string; picture?: string };
+      if (!info.email || !info.sub) throw new AppError(400, 'Could not retrieve Google user info');
+      email = info.email;
+      googleId = info.sub;
+      name = info.name;
+      picture = info.picture;
+    } else {
+      throw new AppError(400, 'Either idToken or accessToken is required');
+    }
 
     let user = await prisma.user.findFirst({
-      where: { OR: [{ googleId: payload.sub }, { email: payload.email }] },
+      where: { OR: [{ googleId }, { email: email.toLowerCase() }] },
     });
 
     if (!user) {
-      const username = payload.email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '') + '_' + uuidv4().slice(0, 4);
+      const username = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '') + '_' + uuidv4().slice(0, 4);
       user = await prisma.user.create({
         data: {
-          email: payload.email.toLowerCase(),
+          email: email.toLowerCase(),
           username,
-          name: payload.name || payload.email,
-          googleId: payload.sub,
-          avatarUrl: payload.picture,
+          name: name || email,
+          googleId,
+          avatarUrl: picture,
           isVerified: true,
         },
       });
     } else if (!user.googleId) {
       user = await prisma.user.update({
         where: { id: user.id },
-        data: { googleId: payload.sub, avatarUrl: payload.picture, isVerified: true },
+        data: { googleId, avatarUrl: picture, isVerified: true },
       });
     }
 
@@ -208,6 +234,12 @@ export class AuthService {
       data,
       select: { id: true, email: true, username: true, name: true, avatarUrl: true, role: true, plan: true },
     });
+  }
+
+  // Public alias used by googleCallback after Passport authenticates via browser redirect
+  async issueTokensForUser(user: { id: string; email: string; role: string; plan: string }): Promise<AuthTokens> {
+    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }).catch(() => {});
+    return this.issueTokens(user);
   }
 
   private async issueTokens(user: { id: string; email: string; role: string; plan: string }): Promise<AuthTokens> {

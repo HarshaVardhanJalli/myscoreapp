@@ -6,7 +6,7 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { getItem, setItem, removeItem } from './storage';
 
-const BASE_URL = __DEV__
+export const BASE_URL = __DEV__
   ? 'http://localhost:3000/api'
   : 'https://api.myscoreapp.com/api';
 
@@ -124,8 +124,8 @@ export const authAPI = {
     api.post('/auth/register', data),
   login: (data: { email: string; password: string }) =>
     api.post('/auth/login', data),
-  googleAuth: (idToken: string) =>
-    api.post('/auth/google', { idToken }),
+  googleAuth: (token: string, type: 'idToken' | 'accessToken' = 'accessToken') =>
+    api.post('/auth/google', type === 'idToken' ? { idToken: token } : { accessToken: token }),
   refresh: (refreshToken: string) =>
     api.post('/auth/refresh', { refreshToken }),
   logout: (refreshToken: string) =>

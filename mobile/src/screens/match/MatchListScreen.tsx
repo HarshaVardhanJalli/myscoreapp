@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { fetchMatches } from '../../store/slices/matchSlice';
 import { RootStackParamList } from '../../navigation';
@@ -79,8 +80,18 @@ function MatchRow({ match, onPress }: { match: Match; onPress: () => void }) {
           <Text style={styles.rowTeam}>{match.team2.shortName}</Text>
           <Text style={styles.rowScore}>{inns2 ? `${inns2.totalRuns}/${inns2.wickets}` : '—'}</Text>
         </View>
-        {!!resultText && <Text style={styles.rowResult}>{resultText}</Text>}
-        {!resultText && !!match.venueName && <Text style={styles.rowVenue}>{match.venueName}</Text>}
+        {!!resultText && (
+          <View style={styles.rowInfoLine}>
+            <Ionicons name="trophy-outline" size={14} color={colors.accent} />
+            <Text style={styles.rowResult}>{resultText}</Text>
+          </View>
+        )}
+        {!resultText && !!match.venueName && (
+          <View style={styles.rowInfoLine}>
+            <Ionicons name="location-outline" size={14} color={colors.textMuted} />
+            <Text style={styles.rowVenue}>{match.venueName}</Text>
+          </View>
+        )}
       </GlassCard>
     </TouchableOpacity>
   );
@@ -330,13 +341,17 @@ const styles = StyleSheet.create({
   rowResult: {
     color: colors.accent,
     fontWeight: '700',
-    marginTop: spacing.md,
     fontSize: font.sm,
     fontFamily: typography.display,
   },
+  rowInfoLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.md,
+  },
   rowVenue: {
     color: colors.textMuted,
-    marginTop: spacing.md,
     fontSize: font.sm,
     fontFamily: typography.body,
   },

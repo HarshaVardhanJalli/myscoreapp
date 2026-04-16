@@ -82,8 +82,18 @@ function MatchCard({ match, onPress }: { match: Match; onPress: () => void }) {
             </Text>
           </View>
         </View>
-        {!!resultText && <Text style={styles.result}>{resultText}</Text>}
-        {!!match.venueName && <Text style={styles.venue}>{match.venueName}</Text>}
+        {!!resultText && (
+          <View style={styles.infoRow}>
+            <Ionicons name="trophy-outline" size={14} color={colors.accent} />
+            <Text style={styles.result}>{resultText}</Text>
+          </View>
+        )}
+        {!!match.venueName && (
+          <View style={styles.infoRow}>
+            <Ionicons name="location-outline" size={14} color={colors.textMuted} />
+            <Text style={styles.venue}>{match.venueName}</Text>
+          </View>
+        )}
       </GlassCard>
     </TouchableOpacity>
   );
@@ -492,13 +502,17 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: font.sm,
     fontWeight: '700',
-    marginTop: spacing.md,
     fontFamily: typography.display,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.md,
   },
   venue: {
     color: colors.textMuted,
     fontSize: font.sm,
-    marginTop: spacing.xs,
     fontFamily: typography.body,
   },
 

@@ -7,9 +7,10 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  Alert, Modal, ActivityIndicator, FlatList, Platform,
+  Alert, Modal, ActivityIndicator, Platform,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { fetchMatch, processBall, undoLastBall, endOver, resetScoring } from '../../store/slices/scoringSlice';
 import { inningsAPI, matchAPI, teamAPI } from '../../services/api';
@@ -24,6 +25,11 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Scoring'>;
 interface PlayerInfo {
   id: string;
   name: string;
+}
+
+interface PlayerPickerOption extends PlayerInfo {
+  isOut: boolean;
+  dismissalInfo?: string;
 }
 
 interface TeamPlayerGroup {
@@ -51,6 +57,11 @@ interface BowlerLiveStats {
   noBalls: number;
 }
 
+interface BattingPlayerStatus {
+  isOut: boolean;
+  dismissalInfo?: string;
+}
+
 // ─── Small components ────────────────────────────────────────────────────────
 
 function BallChip({ label, type }: { label: string; type: string }) {
@@ -75,6 +86,19 @@ const chipStyles = StyleSheet.create({
   labelWhite: { color: '#fff' },
 });
 
+const WICKET_TYPE_META: Record<WicketType, { icon: string; label: string }> = {
+  BOWLED: { icon: 'radio-button-on-outline', label: 'Bowled' },
+  CAUGHT: { icon: 'hand-left-outline', label: 'Caught' },
+  LBW: { icon: 'body-outline', label: 'LBW' },
+  RUN_OUT: { icon: 'walk-outline', label: 'Run Out' },
+  STUMPED: { icon: 'flash-outline', label: 'Stumped' },
+  HIT_WICKET: { icon: 'warning-outline', label: 'Hit Wicket' },
+  OBSTRUCTING_FIELD: { icon: 'ban-outline', label: 'Obstructing Field' },
+  TIMED_OUT: { icon: 'time-outline', label: 'Timed Out' },
+  HANDLED_BALL: { icon: 'hand-right-outline', label: 'Handled Ball' },
+  HIT_BALL_TWICE: { icon: 'repeat-outline', label: 'Hit Ball Twice' },
+};
+
 function WicketModal({
   visible, onSelect, onCancel,
 }: { visible: boolean; onSelect: (t: WicketType) => void; onCancel: () => void }) {
@@ -89,7 +113,12 @@ function WicketModal({
           <Text style={modalStyles.title}>Select Wicket Type</Text>
           {types.map((t) => (
             <TouchableOpacity key={t} style={modalStyles.option} onPress={() => onSelect(t)}>
-              <Text style={modalStyles.optionText}>{t.replace(/_/g, ' ')}</Text>
+              <View style={modalStyles.optionRow}>
+                <View style={modalStyles.optionIconWrap}>
+                  <Ionicons name={WICKET_TYPE_META[t].icon} size={18} color="#56607F" />
+                </View>
+                <Text style={modalStyles.optionText}>{WICKET_TYPE_META[t].label}</Text>
+              </View>
             </TouchableOpacity>
           ))}
           <TouchableOpacity style={modalStyles.cancel} onPress={onCancel}>
@@ -105,23 +134,51 @@ function PlayerPickerModal({
   visible, title, players, onSelect, onCancel,
 }: {
   visible: boolean; title: string;
-  players: PlayerInfo[];
+  players: Array<PlayerInfo | PlayerPickerOption>;
   onSelect: (id: string) => void; onCancel: () => void;
 }) {
+  const normalizedPlayers: PlayerPickerOption[] = players.map((player) => ({
+    ...player,
+    isOut: 'isOut' in player ? player.isOut : false,
+    dismissalInfo: 'dismissalInfo' in player ? player.dismissalInfo : undefined,
+  }));
+  const availablePlayers = normalizedPlayers.filter((player) => !player.isOut);
+  const outPlayers = normalizedPlayers.filter((player) => player.isOut);
+
   return (
     <Modal visible={visible} transparent animationType="slide">
       <View style={modalStyles.overlay}>
         <View style={[modalStyles.sheet, { maxHeight: '70%' }]}>
           <Text style={modalStyles.title}>{title}</Text>
-          <FlatList
-            data={players}
-            keyExtractor={(p) => p.id}
-            renderItem={({ item }) => (
-              <TouchableOpacity style={modalStyles.option} onPress={() => onSelect(item.id)}>
-                <Text style={modalStyles.optionText}>{item.name}</Text>
+          <Text style={modalStyles.helperText}>Available players can be selected. Out players are shown for reference only.</Text>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {availablePlayers.length > 0 && <Text style={modalStyles.sectionLabel}>Available</Text>}
+            {availablePlayers.map((item) => (
+              <TouchableOpacity key={item.id} style={modalStyles.option} onPress={() => onSelect(item.id)}>
+                <View style={modalStyles.optionRow}>
+                  <View style={modalStyles.optionIconWrap}>
+                    <Ionicons name="checkmark-circle-outline" size={18} color="#4F46E5" />
+                  </View>
+                  <Text style={modalStyles.optionText}>{item.name}</Text>
+                </View>
               </TouchableOpacity>
-            )}
-          />
+            ))}
+
+            {outPlayers.length > 0 && <Text style={modalStyles.sectionLabel}>Out</Text>}
+            {outPlayers.map((item) => (
+              <View key={item.id} style={[modalStyles.option, modalStyles.optionDisabled]}>
+                <View style={modalStyles.optionRow}>
+                  <View style={[modalStyles.optionIconWrap, modalStyles.optionIconWrapMuted]}>
+                    <Ionicons name="close-circle-outline" size={18} color="#C06B74" />
+                  </View>
+                  <View style={modalStyles.optionTextWrap}>
+                    <Text style={modalStyles.optionTextDisabled}>{item.name}</Text>
+                    {!!item.dismissalInfo && <Text style={modalStyles.optionMeta}>{item.dismissalInfo}</Text>}
+                  </View>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
           <TouchableOpacity style={modalStyles.cancel} onPress={onCancel}>
             <Text style={modalStyles.cancelText}>Cancel</Text>
           </TouchableOpacity>
@@ -200,6 +257,24 @@ const modalStyles = StyleSheet.create({
     fontSize: 18, fontWeight: '700', color: '#1A1F36', padding: 16,
     borderBottomWidth: 1, borderBottomColor: 'rgba(226,232,240,0.6)',
   },
+  helperText: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 4,
+    color: '#8B94B2',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  sectionLabel: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 6,
+    color: '#8B94B2',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
   groupSection: {
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(226,232,240,0.4)',
@@ -224,7 +299,23 @@ const modalStyles = StyleSheet.create({
     fontWeight: '600',
   },
   option: { padding: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(226,232,240,0.4)' },
+  optionDisabled: { backgroundColor: 'rgba(248,250,255,0.72)' },
+  optionRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  optionIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(233,238,255,0.95)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  optionIconWrapMuted: {
+    backgroundColor: 'rgba(255,236,238,0.92)',
+  },
+  optionTextWrap: { flex: 1 },
   optionText: { fontSize: 16, color: '#1A1F36' },
+  optionTextDisabled: { fontSize: 16, color: '#56607F', fontWeight: '600' },
+  optionMeta: { marginTop: 2, color: '#8B94B2', fontSize: 12 },
   cancel: {
     margin: 12, backgroundColor: 'rgba(255,255,255,0.76)', borderRadius: 14, padding: 14, alignItems: 'center',
     borderWidth: 1, borderColor: '#E2E8F0',
@@ -275,6 +366,7 @@ export default function ScoringScreen({ route, navigation }: Props) {
   // Live batsman/bowler stats (tracked locally from ball results)
   const [batsmanStats, setBatsmanStats] = useState<Map<string, BatsmanLiveStats>>(new Map());
   const [bowlerStats, setBowlerStats] = useState<Map<string, BowlerLiveStats>>(new Map());
+  const [battingPlayerStatus, setBattingPlayerStatus] = useState<Map<string, BattingPlayerStatus>>(new Map());
 
   // Ball state
   const [isWide, setIsWide] = useState(false);
@@ -373,6 +465,15 @@ export default function ScoringScreen({ route, navigation }: Props) {
       if (hydratedBatting.size > 0) {
         setBatsmanStats(hydratedBatting);
       }
+
+      const nextBattingStatus = new Map<string, BattingPlayerStatus>();
+      battingEntries.forEach((player: any) => {
+        nextBattingStatus.set(player.playerId, {
+          isOut: player.isOut ?? false,
+          dismissalInfo: player.dismissalInfo ?? undefined,
+        });
+      });
+      setBattingPlayerStatus(nextBattingStatus);
 
       const hydratedBowling = new Map<string, BowlerLiveStats>();
       bowlingEntries.forEach((player: any) => {
@@ -551,6 +652,10 @@ export default function ScoringScreen({ route, navigation }: Props) {
       setShowBowlerPicker(true);
     }
 
+    if (ball.isWicket) {
+      void loadInnings();
+    }
+
     // Innings/match complete
     if (lastBall.isMatchComplete) {
       const alertFn = Platform.OS === 'web' ? (t: string, m: string) => { window.alert(`${t}\n${m}`); navigation.replace('Scorecard', { matchId }); }
@@ -564,11 +669,17 @@ export default function ScoringScreen({ route, navigation }: Props) {
           alertFn('Match Complete', lastBall.commentary);
         });
     } else if (lastBall.isInningsComplete) {
-      const alertFn = Platform.OS === 'web' ? (t: string, m: string) => { window.alert(`${t}\n${m}`); navigation.replace('Scorecard', { matchId }); }
-        : (t: string, m: string) => Alert.alert(t, m, [{ text: 'View Scorecard', onPress: () => navigation.replace('Scorecard', { matchId }) }]);
-      alertFn('Innings Complete', lastBall.commentary);
+      if (Platform.OS === 'web') {
+        window.alert(`Innings Complete\n${lastBall.commentary}`);
+        navigation.replace('MatchDetail', { matchId });
+      } else {
+        Alert.alert('Innings Complete', lastBall.commentary, [
+          { text: 'View Scorecard', onPress: () => navigation.replace('Scorecard', { matchId }) },
+          { text: 'Go to Match', onPress: () => navigation.replace('MatchDetail', { matchId }) },
+        ]);
+      }
     }
-  }, [inningsId, lastBall, navigation, matchId, battingPlayers, bowlingPlayers]);
+  }, [inningsId, lastBall, navigation, matchId, battingPlayers, bowlingPlayers, loadInnings]);
 
   // ─── Ball input handlers ─────────────────────────────────────────────────
 
@@ -591,11 +702,22 @@ export default function ScoringScreen({ route, navigation }: Props) {
     const hasStriker = battingPlayers.some((player) => player.id === strikerId);
     const hasNonStriker = battingPlayers.some((player) => player.id === nonStrikerId);
     const hasBowler = bowlingPlayers.some((player) => player.id === bowlerId);
+    const strikerStatus = battingPlayerStatus.get(strikerId);
+    const nonStrikerStatus = battingPlayerStatus.get(nonStrikerId);
 
     if (!hasStriker || !hasNonStriker || !hasBowler) {
       void loadInnings();
       const alertMsg = 'Scoring players were out of sync with this innings. The screen has been refreshed, please try again.';
       if (Platform.OS === 'web') { window.alert(alertMsg); } else { Alert.alert('Players Refreshed', alertMsg); }
+      return;
+    }
+
+    if (strikerStatus?.isOut || nonStrikerStatus?.isOut) {
+      void loadInnings();
+      const alertMsg = 'One of the selected batters is already out. Please choose from the available players.';
+      if (Platform.OS === 'web') { window.alert(alertMsg); } else { Alert.alert('Unavailable Batter', alertMsg); }
+      if (strikerStatus?.isOut) setShowStrikerPicker(true);
+      else setShowNonStrikerPicker(true);
       return;
     }
 
@@ -689,6 +811,17 @@ export default function ScoringScreen({ route, navigation }: Props) {
     { title: `${teamNames.batting || 'Batting'} players`, players: battingPlayers },
   ];
 
+  function buildBattingPickerOptions(excludeId?: string): PlayerPickerOption[] {
+    return battingPlayers
+      .filter((player) => player.id !== excludeId)
+      .map((player) => ({
+        ...player,
+        isOut: battingPlayerStatus.get(player.id)?.isOut ?? false,
+        dismissalInfo: battingPlayerStatus.get(player.id)?.dismissalInfo,
+      }))
+      .sort((left, right) => Number(left.isOut) - Number(right.isOut) || left.name.localeCompare(right.name));
+  }
+
   // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
@@ -772,7 +905,7 @@ export default function ScoringScreen({ route, navigation }: Props) {
         </View>
         <View style={s.bowlerRow}>
           <View style={s.bowlerNameCol}>
-            <Text style={s.bowlerIcon}>⚾</Text>
+            <Ionicons name="baseball-outline" size={16} color="#6366F1" style={s.bowlerIcon} />
             <Text style={s.playerName} numberOfLines={1}>{bowlerName}</Text>
           </View>
           <View style={s.bowlerStatHeaders}>
@@ -924,7 +1057,7 @@ export default function ScoringScreen({ route, navigation }: Props) {
       <PlayerPickerModal
         visible={showStrikerPicker}
         title="Select Striker"
-        players={battingPlayers.filter(p => p.id !== nonStrikerId)}
+        players={buildBattingPickerOptions(nonStrikerId)}
         onSelect={(id) => { setStrikerId(id); setShowStrikerPicker(false); }}
         onCancel={() => setShowStrikerPicker(false)}
       />
@@ -932,7 +1065,7 @@ export default function ScoringScreen({ route, navigation }: Props) {
       <PlayerPickerModal
         visible={showNonStrikerPicker}
         title="Select Non-Striker"
-        players={battingPlayers.filter(p => p.id !== strikerId)}
+        players={buildBattingPickerOptions(strikerId)}
         onSelect={(id) => { setNonStrikerId(id); setShowNonStrikerPicker(false); }}
         onCancel={() => setShowNonStrikerPicker(false)}
       />
@@ -959,7 +1092,7 @@ export default function ScoringScreen({ route, navigation }: Props) {
       <PlayerPickerModal
         visible={showNewBatsmanPicker}
         title="New Batsman In"
-        players={battingPlayers.filter(p => p.id !== strikerId && p.id !== nonStrikerId)}
+        players={buildBattingPickerOptions(undefined).filter((player) => player.id !== strikerId && player.id !== nonStrikerId)}
         onSelect={(id) => {
           setStrikerId(id);
           setBatsmanStats(prev => {
@@ -1083,7 +1216,7 @@ const s = StyleSheet.create({
   bowlerNameCol: {
     flexDirection: 'row', alignItems: 'center', flex: 1,
   },
-  bowlerIcon: { fontSize: 14, marginRight: 8 },
+  bowlerIcon: { marginRight: 8 },
 
   // Over trail
   overRow: {

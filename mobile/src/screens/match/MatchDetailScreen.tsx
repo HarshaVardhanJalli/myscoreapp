@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { fetchMatch } from '../../store/slices/matchSlice';
 import { matchAPI } from '../../services/api';
@@ -190,7 +191,12 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
       <View style={styles.titleCard}>
         <Text style={styles.matchType}>{currentMatch.matchType} · {currentMatch.oversPerInnings} overs</Text>
         <Text style={styles.matchTitle}>{currentMatch.title}</Text>
-        {currentMatch.venueName && <Text style={styles.venue}>📍 {currentMatch.venueName}</Text>}
+        {currentMatch.venueName && (
+          <View style={styles.inlineMetaRow}>
+            <Ionicons name="location-outline" size={15} color="#A5B4FC" />
+            <Text style={styles.venue}>{currentMatch.venueName}</Text>
+          </View>
+        )}
         <View style={styles.statusRow}>
           <View style={[styles.statusBadge, isLive && styles.statusBadgeLive]}>
             {isLive && <View style={styles.liveDot} />}
@@ -275,7 +281,10 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
               style={styles.actionBtn}
               onPress={() => setShowTossModal(true)}
             >
-              <Text style={styles.actionBtnText}>🪙 Record Toss</Text>
+              <View style={styles.actionBtnInner}>
+                <Ionicons name="aperture-outline" size={18} color={colors.white} />
+                <Text style={styles.actionBtnText}>Record Toss</Text>
+              </View>
             </TouchableOpacity>
           )}
           {(currentMatch.status === 'TOSS' || currentMatch.status === 'INNINGS_BREAK') && (
@@ -286,7 +295,12 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
             >
               {actionLoading
                 ? <ActivityIndicator color={colors.white} />
-                : <Text style={styles.actionBtnText}>▶ Start Innings</Text>
+                : (
+                  <View style={styles.actionBtnInner}>
+                    <Ionicons name="play-outline" size={18} color={colors.white} />
+                    <Text style={styles.actionBtnText}>Start Innings</Text>
+                  </View>
+                )
               }
             </TouchableOpacity>
           )}
@@ -298,7 +312,10 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
                 navigation.navigate('Scoring', { matchId, inningsId: (lastInnings as any).id ?? matchId });
               }}
             >
-              <Text style={styles.actionBtnText}>🏏 Continue Scoring</Text>
+              <View style={styles.actionBtnInner}>
+                <Ionicons name="flash-outline" size={18} color={colors.white} />
+                <Text style={styles.actionBtnText}>Continue Scoring</Text>
+              </View>
             </TouchableOpacity>
           )}
         </View>
@@ -354,7 +371,10 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
           style={styles.scorecardBtn}
           onPress={() => navigation.navigate('Scorecard', { matchId })}
         >
-          <Text style={styles.scorecardBtnText}>📋 View Full Scorecard</Text>
+          <View style={styles.actionBtnInner}>
+            <Ionicons name="document-text-outline" size={18} color="#6366F1" />
+            <Text style={styles.scorecardBtnText}>View Full Scorecard</Text>
+          </View>
         </TouchableOpacity>
       )}
     </ScrollView>
@@ -388,10 +408,15 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     marginBottom: 8,
   },
+  inlineMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+  },
   venue: {
     fontSize: 14,
     color: '#C8D6F8',
-    marginBottom: 12,
   },
   statusRow: { flexDirection: 'row' },
   statusBadge: {
@@ -587,6 +612,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     alignItems: 'center',
     ...shadows.glow,
+  },
+  actionBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   actionBtnText: {
     color: '#FFFFFF',

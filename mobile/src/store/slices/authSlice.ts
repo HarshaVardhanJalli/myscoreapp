@@ -46,9 +46,12 @@ export const login = createAsyncThunk(
 
 export const googleLogin = createAsyncThunk(
   'auth/googleLogin',
-  async (idToken: string, { rejectWithValue }) => {
+  async (
+    { token, type = 'accessToken' }: { token: string; type?: 'idToken' | 'accessToken' },
+    { rejectWithValue }
+  ) => {
     try {
-      const res = await authAPI.googleAuth(idToken);
+      const res = await authAPI.googleAuth(token, type);
       await storeTokens(res.data.accessToken, res.data.refreshToken);
       const meRes = await authAPI.getMe();
       return meRes.data;

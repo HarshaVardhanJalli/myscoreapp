@@ -43,6 +43,7 @@ export class TeamController {
       const { search, page = '1', limit = '20' } = req.query;
       const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
       const where: any = { deletedAt: null };
+      if (req.user?.sub) where.ownerId = req.user.sub;
       if (search) where.name = { contains: search as string, mode: 'insensitive' };
 
       const [teams, total] = await Promise.all([

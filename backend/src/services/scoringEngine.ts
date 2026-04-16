@@ -855,8 +855,7 @@ export class ScoringEngine implements ScoringEngineInterface {
       // 11. Handle wicket
       let isInningsComplete = false;
       let dismissedPlayer: any = null;
-      const totalPlayers = innings.playingXI
-        ? (JSON.parse(innings.playingXI as string) as string[]).length : 11;
+      const totalPlayers = getPlayingXICount(innings.playingXI as string | null);
       let incomingBatsmanId: string | undefined;
 
       if (ballInput.isWicket && ballInput.dismissedPlayerId) {
@@ -877,22 +876,25 @@ export class ScoringEngine implements ScoringEngineInterface {
           },
         });
 
-        // Check if innings is over (9th wicket = innings complete for limited overs, 10th in test)
+        // Determine whether another batter is genuinely available, regardless of manual reorder.
+        const remainingBatters = await tx.inningsPlayer.findMany({
+          where: {
+            inningsId,
+            role: 'BATSMAN',
+            isOut: false,
+            playerId: { not: ballInput.dismissedPlayerId },
+          },
+          orderBy: { battingOrder: 'asc' },
+        });
+
+        const fieldedBatters = remainingBatters.filter((player) => player.isOnField);
+        const waitingBatters = remainingBatters.filter((player) => !player.isOnField);
         const newWickets = (innings.wickets as number) + 1;
-        isInningsComplete = newWickets >= totalPlayers - 1; // Last man standing
+
+        isInningsComplete = remainingBatters.length < 2 || newWickets >= totalPlayers - 1;
 
         if (!isInningsComplete) {
-          // Bring in next batsman
-          const nextBatsman = await tx.inningsPlayer.findFirst({
-            where: {
-              inningsId,
-              isOnField: false,
-              isOut: false,
-              role: 'BATSMAN',
-              battingOrder: { gt: dismissedPlayer.battingOrder as number },
-            },
-            orderBy: { battingOrder: 'asc' },
-          });
+          const nextBatsman = waitingBatters[0];
 
           if (nextBatsman) {
             await tx.inningsPlayer.update({
@@ -900,7 +902,7 @@ export class ScoringEngine implements ScoringEngineInterface {
               data: { isOnField: true },
             });
             incomingBatsmanId = nextBatsman.playerId as string;
-          } else {
+          } else if (fieldedBatters.length < 2) {
             isInningsComplete = true;
           }
         }

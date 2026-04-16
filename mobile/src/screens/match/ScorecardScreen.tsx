@@ -3,11 +3,13 @@
  * created_by: MyCricketScoreEngine_v1
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { matchAPI } from '../../services/api';
 import { RootStackParamList } from '../../navigation';
 import { colors, spacing, radius, font, shadows } from '../../theme';
@@ -82,7 +84,9 @@ export default function ScorecardScreen({ route }: Props) {
   const [activeInnings, setActiveInnings] = useState(0);
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  const loadScorecard = useCallback(() => {
+    setIsLoading(true);
+    setError('');
     matchAPI.scorecard(matchId)
       .then((res) => {
         const data = res.data;
@@ -139,6 +143,16 @@ export default function ScorecardScreen({ route }: Props) {
       .finally(() => setIsLoading(false));
   }, [matchId]);
 
+  useEffect(() => {
+    loadScorecard();
+  }, [loadScorecard]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadScorecard();
+    }, [loadScorecard]),
+  );
+
   if (isLoading) {
     return <View style={styles.loader}><ActivityIndicator size="large" color={colors.primary} /></View>;
   }
@@ -173,7 +187,10 @@ export default function ScorecardScreen({ route }: Props) {
       <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 40 }}>
         {/* Innings summary */}
         <View style={styles.inningsSummary}>
-          <Text style={styles.inningsTitle}>{card.battingTeamName}</Text>
+          <View style={styles.summaryTitleRow}>
+            <Ionicons name="shield-outline" size={18} color={colors.primaryLight} />
+            <Text style={styles.inningsTitle}>{card.battingTeamName}</Text>
+          </View>
           <Text style={styles.inningsScore}>
             {card.totalRuns}/{card.wickets}
             <Text style={styles.inningsOvers}>  ({card.overs} ov)</Text>
@@ -182,7 +199,10 @@ export default function ScorecardScreen({ route }: Props) {
 
         {/* Batting */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Batting</Text>
+          <View style={styles.sectionTitleRow}>
+            <Ionicons name="flash-outline" size={16} color={colors.primary} />
+            <Text style={styles.sectionTitle}>Batting</Text>
+          </View>
           <TableHeader cols={[
             { label: 'Batter', flex: 3, align: 'left' },
             { label: 'R' },
@@ -218,7 +238,10 @@ export default function ScorecardScreen({ route }: Props) {
 
         {/* Bowling */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Bowling</Text>
+          <View style={styles.sectionTitleRow}>
+            <Ionicons name="baseball-outline" size={16} color={colors.primary} />
+            <Text style={styles.sectionTitle}>Bowling</Text>
+          </View>
           <TableHeader cols={[
             { label: 'Bowler', flex: 3, align: 'left' },
             { label: 'O' },
@@ -305,6 +328,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  summaryTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   inningsTitle: {
     fontSize: 18,
     fontWeight: '800',
@@ -332,12 +360,17 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.50)',
     ...shadows.card,
   },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+  },
   sectionTitle: {
     fontSize: font.xs,
     fontWeight: '800',
     color: colors.textSecondary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 12,
     textTransform: 'uppercase',
     letterSpacing: 1.2,
   },

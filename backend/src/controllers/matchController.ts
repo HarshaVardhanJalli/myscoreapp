@@ -47,7 +47,7 @@ export class MatchController {
 
       const result = await matchService.listMatches({
         ...query,
-        userId: req.query.mine === 'true' ? req.user?.sub : undefined,
+        userId: req.user?.sub,
       } as any);
       res.json(result);
     } catch (err) { next(err); }
