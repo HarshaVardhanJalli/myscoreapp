@@ -2,6 +2,12 @@
 
 A full-featured cricket scoring and analytics mobile application built with React Native and Node.js. Score matches ball-by-ball, track player statistics, manage tournaments, and share live scores with your community.
 
+<img width="568" height="1084" alt="image" src="https://github.com/user-attachments/assets/dd7c1753-c323-44c8-b22a-bdc2491c789e" />
+<img width="568" height="1084" alt="image" src="https://github.com/user-attachments/assets/bb1eb1ab-bf51-4277-882a-396f49245c0c" />
+<img width="568" height="1084" alt="image" src="https://github.com/user-attachments/assets/85b8b94c-9c0f-4501-a15b-66cc1894b477" />
+<img width="568" height="1084" alt="image" src="https://github.com/user-attachments/assets/7ea62e36-0590-4d2c-9fa4-cb93769fd909" />
+
+
 ---
 
 ## Table of Contents
